@@ -1,5 +1,5 @@
-# Spark Core ArtNet RX/DMX TX
-This is a simple application for the Spark Core that receives ArtNet over WiFi and transmits it over DMX.
+# Spark Core E1.31 RX/DMX TX
+This is a simple application for the Spark Core that receives E1.31 over WiFi and transmits it over DMX.
 
 The received DMX universe is stored and transmitted over DMX with a refresh rate of 25Hz.
 
@@ -17,7 +17,7 @@ To receive ArtDMX packages, change
 `#define RX_BUF_MAX_SIZE	512`
 to
 
-`#define RX_BUF_MAX_SIZE	576`
+`#define RX_BUF_MAX_SIZE	640`
 
 in the file `core-firmware/inc/spark_wiring_udp.h`
 

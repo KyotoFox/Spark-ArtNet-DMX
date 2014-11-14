@@ -4,9 +4,7 @@
  To receive ArtNet packages you need to modify one line in ../inc/spark_wiring_udp.h from
     #define RX_BUF_MAX_SIZE	512
  to
-    #define RX_BUF_MAX_SIZE	576
- 
- If not you will only receive the last 18 bytes of every ArtDMX-package.
+    #define RX_BUF_MAX_SIZE	640
 */
 
 
@@ -53,24 +51,20 @@ extern "C" {
 }
 #endif
 
-// ArtNet SubnetID + UniverseID
-// Edit this with SubnetID + UniverseID you want to receive
-byte SubnetID = {0};
-byte UniverseID = {0};
-short selected_universe = ((SubnetID * 16) + UniverseID);
+// Universe
+short selected_universe = 1;
 
 // Buffers
-const int MAX_BUFFER_UDP = 576;
+const int MAX_BUFFER_UDP = 640;
 char packetBuffer[MAX_BUFFER_UDP]; // Incoming UDP data buffer
 
 uint8_t dmx_data[512]; // Index 0 is DMX channel 1
 
 // ArtNet parameters
-unsigned int localPort = 6454; // artnet UDP port is by default 6454
-const int art_net_header_size = 17;
-const int max_packet_size = 576;
+unsigned int localPort = 5568; // "When multicast addressing is used, the UDP destination Port shall be set to the standard ACN-SDT multicast port (5568)"
+const int max_packet_size = 640;
 
-char ArtNetHead[8] = "Art-Net";
+const char E131Header[] = { 0x00, 0x10, 0x00, 0x00, 0x41, 0x53, 0x43, 0x2d, 0x45, 0x31, 0x2e, 0x31, 0x37, 0x00, 0x00, 0x00};
 
 UDP Udp;
 
@@ -157,7 +151,7 @@ void setup()
     Udp.begin(localPort);
     
     Serial.print("IP: ");
-    Serial.println(Network.localIP());
+    Serial.println(WiFi.localIP());
     
     // DMX
     setupDMX();
@@ -169,51 +163,47 @@ void setup()
 void loop()
 {
     int packetSize = Udp.parsePacket();
-    
-    if(packetSize > art_net_header_size && packetSize <= max_packet_size) // Check size to avoid unnecessary checks
+
+    if(packetSize >= 638) // Check size to avoid unnecessary checks
     {
         Udp.read(packetBuffer, MAX_BUFFER_UDP); // Read data into buffer
         
         // Read header
         boolean match_artnet = 1;
-        for (int i = 0; i<7; i++)
+        for (uint8_t i = 0; i<(sizeof E131Header); i++)
         {
             // if not corresponding, this is not an artnet packet, so we stop reading
-            if(char(packetBuffer[i]) != ArtNetHead[i])
+            if(char(packetBuffer[i]) != E131Header[i])
             {
                 match_artnet = 0;
                 break;
             }
         }
         
+        if(match_artnet == 1){
+            
+            uint32_t framing_vector = (packetBuffer[40] << 24) | (packetBuffer[41] << 16) | (packetBuffer[42] << 8) | packetBuffer[43];
+            
+            // Check if this is E1.31 data
+            if(framing_vector != 0x00000002){
+                match_artnet = 0;
+            }
+        }
+        
         // if it's an artnet header
         if(match_artnet == 1)
         {
-            // Operator code enables to know wich type of message Art-Net it is
-            short Opcode = bytes_to_short(packetBuffer[9], packetBuffer[8]);
+            short incoming_universe = packetBuffer[113] << 8 | packetBuffer[114];
             
-            // ArtDMX opcode
-            if(Opcode == 0x5000)
+            // Check universe
+            if(incoming_universe == selected_universe)
             {
-                // Read incoming universe
-                short incoming_universe = bytes_to_short(packetBuffer[15], packetBuffer[14]);
-                
-                // Check universe
-                if(incoming_universe == selected_universe)
-                {
-                    for(int i = 0; i < 512; i++){
-                        dmx_data[i] = byte(packetBuffer[i + art_net_header_size + 1]);
-                    }
-                    
-                    // Set RGB LED with channel 1, 2 and 3
-                    RGB.color(dmx_data[0], dmx_data[1], dmx_data[2]);
+                for(int i = 0; i < 512; i++){
+                    dmx_data[i] = byte(packetBuffer[126 + i]);
                 }
-            }
-            
-            // ArtPoll opcode
-            else if(Opcode == 0x2000)
-            {
-                // (we should normally reply to it, giving ip adress of the device)
+                
+                // Set RGB LED with channel 1, 2 and 3
+                RGB.color(dmx_data[0], dmx_data[1], dmx_data[2]);
             }
         }
     }
